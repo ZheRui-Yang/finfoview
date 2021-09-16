@@ -1,5 +1,6 @@
-#! /usr/bin/env python
-'''FINFO 貼文簡易查詢
+#! /usr/bin/env python3
+'''
+FINFO 貼文簡易查詢
 
 功能：
 互動式 finfo.tw 討論區貼文查看器。
@@ -9,18 +10,25 @@
 2. 把查詢過的文章存入硬碟（ JSON ）
 
 使用方式：
-$ python ensurance_crawler.py [-h|--help] [-o|--output PATH] [-n|--nosave]
+$ python finfo_view.py [-h|--help] [-o|--output PATH] [-n|--nosave]
+                       [-j|--json] [-i|--index INDEX]
 
 選項：
 -h, --help               印出這份文件並退出
 -o PATH, --ouptput PATH  指定輸出 JSON 檔的位置，包含檔案名稱及副檔名
                         （預設於工作目錄下存檔）
 -n, --nosave             無論如何都不要存檔
+-j, --json               改成印出 JSON 格式文字
+-i INDEX, --index INDEX  由文章編號擷取指定的一篇文章並退出，
+                         文章編號須為正整數
 
 需求：
 - python3.x.x
 - bs4
 - requests
+
+原作者：kent800821@gmail.com
+專案負責人：zheruiyang@gmail.com 楊哲睿（Zhe-Rui, Yang）
 '''
 
 # 存入硬碟的 JSON 檔結構：
@@ -103,19 +111,11 @@ import requests
 import time
 
 
-URL_BASE = "https://finfo.tw/posts"
-
-if '-o' in sys.argv or '--output' in sys.argv:
-    try:
-        path_index = sys.argv.index('-o') + 1
-    except ValueError:
-        path_index = sys.argv.index('--output') + 1
-
-    OUTPUT_PATH = sys.argv[path_index]
-else:
-    now = time.strftime('%b%d_%H%M_%Y', time.localtime())
-    OUTPUT_PATH = 'finfo_forum_' + now + '.json'
-
+'''
+==========================================================================
+Subprograms
+==========================================================================
+'''
 
 def parse_content(content_div):
     content_list = []
@@ -143,61 +143,37 @@ def add_user(soup, db, identity):
     db['users'].append(user)
 
 
-# initializing "database"
-json_ = {}
-json_['articles'] = []
-json_['classes'] = ['投保規劃', '保單健檢', '理賠申請',
-                    '理賠申請', '保險觀念']
-json_['users'] = []
-json_['replies'] = []
-
-while True:
-    n=int(input('請輸入文章號碼:(輸入0則結束)'))
-    if n==0:
-        break
-    response = requests.get(URL_BASE + '/' + str(n))
+def get_post(index):
+    response = requests.get(URL_BASE + '/' + str(index))
     sp=BeautifulSoup(response.text, "html.parser")
 
     title=sp.find('h1',class_='mb-16-px display-2 display-1-sm')
-
-    if title is None:
-        print('文章不存在或已被刪除')
-        continue
-
     content=sp.find('div',class_='post-content')
     comment=sp.find_all('div',class_='comment-content')
 
-    print(title.get_text(strip=True))
-    print(content.get_text(strip=True))
-    print('回應--------------------------------------------------------')
-    lst=[]
-    for i in range(len(comment)):
-        lst.append(comment[i].text.strip())
-        print('回應',i+1)
-        print(comment[i].get_text(strip=True))
-        print()
+    return sp, title, content, comment
 
-    # structure-lize our data
 
+def parse_post(soup, database, content, comment):
     # build article author
     # Article author are all insurer, and to protect personal data,
     # insurer have no other infomation beside first two latters
     # of username
-    add_user(sp, json_, 'insurer')
+    add_user(soup, database, 'insurer')
 
     # build article
     article = {}
     article['id'] = n
     article['title'] = title.get_text(strip=True)
-    cls_time = sp.find('div', class_='t6 text-gray-1')
+    cls_time = soup.find('div', class_='t6 text-gray-1')
     # NOTE: "．" (i.e. chr(65294)) is not a dot (".")
     article['class'] = cls_time.get_text(strip=True).split('．')[0]
     article['dateTime'] = cls_time.get_text(strip=True).split('．')[1]
-    article['author'] = json_['users'][-1]
+    article['author'] = database['users'][-1]
     article['content'] = parse_content(list(content.next.children))
 
     # build replies
-    meta_comments = sp.find_all(
+    meta_comments = soup.find_all(
             'div',
             class_='d-flex justify-content-start mb-24-px'
             )[1:]  # the first one is for article
@@ -228,18 +204,111 @@ while True:
         except AttributeError:  # the comment is made by an insurer
             salesman = False
         if salesman:
-            add_user(meta_comments[i], json_, 'salesman')
+            add_user(meta_comments[i], database, 'salesman')
             reply_id = url_consultation.split('=')[1]
         else:
-            add_user(meta_comments[i], json_, 'insurer')
+            add_user(meta_comments[i], database, 'insurer')
             reply_id = None
-        reply['author'] = json_['users'][-1]
+        reply['author'] = database['users'][-1]
         reply['id'] = reply_id
-        json_['replies'].append(reply)
-        replies.append(json_['replies'][-1])
+        database['replies'].append(reply)
+        replies.append(database['replies'][-1])
 
     article['replies'] = replies
-    json_['articles'].append(article)
+    database['articles'].append(article)
+
+
+def print_post(title, content, comment, database):
+    PRINT_JSON = '-j' in sys.argv or '--json' in sys.argv
+    if PRINT_JSON:
+        print(json.dumps(database, ensure_ascii=False))
+    else:
+        print(title.get_text(strip=True))
+        print(content.get_text(strip=True))
+        print('回應------------------------------------------------------')
+        for i in range(len(comment)):
+            print('回應',i+1)
+            print(comment[i].get_text(strip=True))
+            print()
+
+'''
+==========================================================================
+Main Program - Initializing Data Container
+==========================================================================
+'''
+
+json_ = {}
+json_['articles'] = []
+json_['classes'] = ['投保規劃', '保單健檢', '理賠申請',
+                    '理賠申請', '保險觀念']
+json_['users'] = []
+json_['replies'] = []
+
+'''
+==========================================================================
+Main Program - Interactive Mode
+==========================================================================
+'''
+
+URL_BASE = "https://finfo.tw/posts"
+INTERACTIVE = not ('-i' in sys.argv or not '--index' in sys.argv)
+
+while INTERACTIVE:
+    n=int(input('請輸入文章號碼:(輸入0則結束)'))
+    if n==0:
+        break
+    soup, title, content, comment = get_post(n)
+
+    if title is None:
+        print('文章不存在或已被刪除')
+        continue
+
+    parse_post(soup, json_, content, comment)
+    print_post(title, content, comment, json_)
+
+'''
+==========================================================================
+Main Program - Single Post Mode
+==========================================================================
+'''
+
+if not INTERACTIVE:
+    if '-i' in sys.argv:
+        _index = sys.argv.index('-i')
+    else:
+        _index = sys.argv.index('--index')
+
+    try:
+        int(sys.argv[_index + 1])
+    except ValueError:
+        print(f'參數錯誤（-i {sys.argv[_index + 1]}）：文章編號須為正整數')
+        sys.exit(1)
+
+    n = str(sys.argv[_index + 1])
+    soup, title, content, comment = get_post(n)
+
+    if title is None:
+        print('文章不存在或已被刪除')
+    else:
+        parse_post(soup, json_, content, comment)
+        print_post(title, content, comment, json_)
+
+'''
+==========================================================================
+Main Program - Save Data
+==========================================================================
+'''
+
+if '-o' in sys.argv or '--output' in sys.argv:
+    try:
+        path_index = sys.argv.index('-o') + 1
+    except ValueError:
+        path_index = sys.argv.index('--output') + 1
+
+    OUTPUT_PATH = sys.argv[path_index]
+else:
+    now = time.strftime('%b%d_%H%M_%Y', time.localtime())
+    OUTPUT_PATH = 'finfo_forum_' + now + '.json'
 
 if len(json_['articles'])                \
         and not ('-n' in sys.argv)       \
