@@ -251,7 +251,7 @@ Main Program - Interactive Mode
 '''
 
 URL_BASE = "https://finfo.tw/posts"
-INTERACTIVE = not ('-i' in sys.argv or not '--index' in sys.argv)
+INTERACTIVE = not ('-i' in sys.argv or '--index' in sys.argv)
 
 while INTERACTIVE:
     n=int(input('請輸入文章號碼:(輸入0則結束)'))
