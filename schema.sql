@@ -19,6 +19,7 @@ CREATE TABLE regions (
 CREATE TABLE users (
   id INT UNSIGNED NOT NULL PRIMARY KEY AUTO_INCREMENT,
   name VARCHAR(30) NOT NULL,
+  insurer_or_salesman BOOLEAN,  -- true: insurer, false: salesman
   sex BOOLEAN,  -- true if male, false if female
   region_id TINYINT UNSIGNED,
   CONSTRAINT `fk_user_region`
@@ -27,6 +28,7 @@ CREATE TABLE users (
 
 CREATE TABLE posts (
   id INT UNSIGNED NOT NULL PRIMARY KEY AUTO_INCREMENT, 
+  post_id INT UNSIGNED NOT NULL, -- post id of finfo.tw
   title VARCHAR(100) NOT NULL, 
   position SMALLINT UNSIGNED NOT NULL,  -- 0: main, others: reply
   create_time DATETIME NOT NULL,

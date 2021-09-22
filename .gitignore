@@ -1,0 +1,4 @@
+.venv
+try/
+__pycache__/
+finfo_forum_*
