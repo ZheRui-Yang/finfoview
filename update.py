@@ -113,7 +113,7 @@ class Updater:
 
     def start(self):
         if not any(self.new_posts):
-            print('Databese is up-to-date. There is nothing to do.')
+            print('資料庫以為最新狀態，無須更新')
             sys.exit(0)
 
         json_queue: Queue = Queue()  # json string - str
@@ -134,6 +134,8 @@ class Updater:
         self.db.insert('users', users)
         self.db.insert('posts', posts)
 
+        print('\n全部工作皆已完成，資料庫為最新狀態\n')
+
 
 class DataPorter(Thread):
     '''Consumes post index in in_queue, get data from remote, then put
@@ -153,8 +155,13 @@ class DataPorter(Thread):
             proc = Popen(args, stdout=PIPE)
             out, err = proc.communicate()
 
-            self.out_queue.put(out.decode('utf8'))
-            print(f'DataPorter: 文章 {index} 已擷取至本地端')
+            out = out.decode('utf8')
+
+            if '文章不存在或已被刪除' in out:
+                print(f'DataPorter: 文章 {index} 不存在或已被刪除')
+            else:
+                self.out_queue.put(out)
+                print(f'DataPorter: 文章 {index} 已擷取至本地端')
 
 
 def main():
