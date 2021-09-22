@@ -117,22 +117,33 @@ Subprograms
 ==========================================================================
 '''
 
-def parse_content(content_div):
-    content_list = []
-    for child in content_div:
-        if child.name == 'br' or child == '\n':
-            continue
+def parse_content(contents):  # contents: list of div tags
+    result = []
+    for para in contents:
+        # post contents may contains one or more div tags
+        lines = [i for i in para.children]
 
-        if child.name == 'a':
-            if child.next.name == 'img':  # this is a image tag
-                child = bs4.element.NavigableString(
-                            f'\n圖片： {child.next["src"]}\n'
-                            )
-            else:  # this is a simple link anchor
-                child = child.next
+        for i in range(len(lines)):
+            if lines[i].name == 'br':
+                lines[i] = bs4.element.NavigableString('\n')
+            elif lines[i].name == 'a':
+                if lines[i].next.name == 'img':  # this is an image tag
+                    lines[i] = bs4.element.NavigableString(
+                                f'\n<img>{lines[i].next["src"]}<img>\n'
+                                )
+                else:  # this is a simple link anchor
+                    lines[i] = lines[i].text
+            elif isinstance(lines[i], bs4.element.Tag):  # other tag
+                name = lines[i].name
+                lines[i] = bs4.element.NavigableString(
+                        f'<{name}>{lines[i].next}<{name}>'
+                        )
 
-        content_list.append(child.replace(u'\xa0', u' ').strip())
-    return '\n'.join(content_list)
+            lines[i].replace(u'\xa0', u' ').strip()
+
+        result += lines
+
+    return ''.join(result)
 
 
 def add_user(soup, db, identity):
@@ -170,7 +181,7 @@ def parse_post(soup, database, content, comment):
     article['class'] = cls_time.get_text(strip=True).split('．')[0]
     article['dateTime'] = cls_time.get_text(strip=True).split('．')[1]
     article['author'] = database['users'][-1]
-    article['content'] = parse_content(list(content.next.children))
+    article['content'] = parse_content(content.find_all('div'))
 
     # build replies
     meta_comments = soup.find_all(
@@ -181,9 +192,7 @@ def parse_post(soup, database, content, comment):
     for i in range(len(comment)):  # len(meta_comments) == len(comment)
         reply = {}
         reply['belongsTo'] = n
-        reply['content'] = parse_content(
-                list(comment[i].next.next.children)
-                )
+        reply['content'] = parse_content(comment[i].find_all('div'))
         # parse metadata
         flr_time = meta_comments[i].find('div', class_='t6 text-gray-1')
         # NOTE: "．" (i.e. chr(65294)) is not a dot (".")
